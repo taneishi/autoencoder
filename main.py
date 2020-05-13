@@ -62,6 +62,8 @@ class AutoEncoder(nn.Module):
         return x
 
 def show_torch_image(tensor, name):
+    os.makedirs('figure', exist_ok=True)
+
     plt.imshow(tensor.reshape(28, 28), cmap='gray')
     plt.savefig('figure/%s.png' % name)
 
@@ -86,50 +88,61 @@ def plot():
         prediction = np.load('prediction.npy', allow_pickle=True)
         show_torch_image(predictions[1].cpu().detach(), 'pred_sample')
 
-def train(dataloader, model, optimizer, loss_func, batch_size):
+def train(dataloader, model, optimizer, loss_func, epoch):
     model.train()
     train_loss = 0
-    EPOCHS = 10
 
-    for epoch in range(EPOCHS):
-        epoch_start = timeit.default_timer()
-        for index, (data, target) in enumerate(dataloader, 1):
-            optimizer.zero_grad()
-            pred = model(data)
-            loss = loss_func(pred, data)
-            train_loss += loss.item()
-            loss.backward() # backpropagation
-            optimizer.step()
-            print('\repoch %2d [%3d/%3d] train_loss %5.3f' % (epoch, index, len(dataloader), loss.item()), end='')
-        print(' time %5.2f' % (timeit.default_timer() - epoch_start))
+    for index, (data, target) in enumerate(dataloader, 1):
+        optimizer.zero_grad()
+        output = model(data)
+        loss = loss_func(output, data)
+        train_loss += loss.item()
+        loss.backward() # backpropagation
+        optimizer.step()
+        print('\repoch %2d [%3d/%3d] train_loss %5.3f' % (epoch, index, len(dataloader), train_loss / index), end='')
 
-def test(dataloader, model):
+def test(dataloader, model, loss_func):
     model.eval()
+    test_loss = 0
     predictions = []
-    for data, target in dataloader:
-            pred = model(data)
-            for prediction in pred:
-                predictions.append(prediction)
+
+    for index, (data, target) in enumerate(dataloader, 1):
+        with torch.no_grad():
+            output = model(data)
+        loss = loss_func(output, data)
+        test_loss += loss.item()
+
+        for prediction in output:
+            predictions.append(prediction)
+
+    print(' test_loss %5.3f' % (test_loss / index), end='')
+
     return predictions
 
 def main():
     batch_size = 100
+    epochs = 10
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('Using %s device.' % device)
 
     train_dataloader, test_dataloader = load_dataset(batch_size, device)
 
-    ae = AutoEncoder().to(device)
-    print(ae)
+    model = AutoEncoder().to(device)
+    print(model)
 
     # define our optimizer and loss function
     loss_func = nn.MSELoss()
-    optimizer = torch.optim.Adam(ae.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    train(train_dataloader, ae, optimizer, loss_func, batch_size)
+    for epoch in range(epochs):
+        epoch_start = timeit.default_timer()
 
-    predictions = test(test_dataloader, ae)
+        train(train_dataloader, model, optimizer, loss_func, epoch)
+        predictions = test(test_dataloader, model, loss_func)
+
+        print(' time %5.2f' % (timeit.default_timer() - epoch_start))
+
     print(len(predictions))
 
 if __name__ == '__main__':
